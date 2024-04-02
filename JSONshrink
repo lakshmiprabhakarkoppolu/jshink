@@ -1,0 +1,78 @@
+import json
+import re  # for RFC3339 timestamp conversion
+from datetime import datetime
+
+def transform_json(input_json):
+  """
+  Transforms the input JSON to the desired output format, following all transformation criteria.
+
+  Args:
+      input_json: A dictionary representing the input JSON data.
+
+  Returns:
+      A list of dictionaries representing the transformed JSON data.
+  """
+  output_data = []
+
+  def process_value(value):
+    # Extract data type and value
+    data_type, val = value.lstrip().split(" ", 1)  # Handle leading whitespace
+
+    if data_type == "N":
+      # Numeric
+      try:
+        val = float(val.rstrip().lstrip("0"))  # Handle trailing whitespace and leading zeros
+      except ValueError:
+        return None  # Omit invalid numeric values
+    elif data_type == "S":
+      # String
+      val = val.rstrip()  # Handle trailing whitespace
+      if re.match(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$", val):
+        # RFC3339 timestamp to Unix Epoch
+        val = int(datetime.strptime(val, "%Y-%m-%dT%H:%M:%SZ").timestamp())
+    elif data_type == "BOOL":
+      # Boolean
+      true_values = {"1", "t", "T", "TRUE", "true", "True"}
+      val = True if val.rstrip().lower() in true_values else False
+    elif data_type == "NULL":
+      # Null
+      true_values = {"1", "t", "T", "TRUE", "true", "True"}
+      val = None if val.rstrip().lower() in true_values else ""  # Omit field if false
+    else:
+      # Handle unknown data types (optional: raise an error or log a warning)
+      pass
+
+    return val
+
+  def process_map(map_value):
+    inner_map = {}
+    for inner_key, inner_value in map_value.items():
+      inner_key = inner_key.strip()  # Sanitize key of leading/trailing whitespace
+      if inner_key:  # Omit empty keys
+        inner_value = process_value(inner_value)
+        if inner_value is not None:  # Omit fields with empty values or invalid data types
+          inner_map[inner_key] = inner_value
+    return inner_map or None  # Omit empty maps
+
+  for key, value in input_json.items():
+    transformed_value = {}
+    key = key.strip()  # Sanitize key of leading/trailing whitespace
+    if key:  # Omit empty keys
+      if isinstance(value, dict):
+        # Nested map
+        transformed_value[key] = process_map(value["M"])
+      else:
+        transformed_value[key] = process_value(value)
+      output_data.append(transformed_value)
+
+  return output_data
+
+# Read input JSON from a file (replace 'input.json' with your actual file path)
+with open('input.json', 'r') as f:
+  input_json = json.load(f)
+
+# Transform the data
+transformed_data = transform_json(input_json)
+
+# Print the transformed data to stdout
+print(json.dumps(transformed_data, indent=2))
